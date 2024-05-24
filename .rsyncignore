@@ -1,0 +1,6 @@
+*~
+*.log
+.git
+__pycache__
+venv
+*.sqlite3

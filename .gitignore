@@ -19,3 +19,5 @@ MANIFEST
 # project-specific files
 secrets.py
 weather-test.py
+font.list*
+sdl-test

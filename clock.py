@@ -9,6 +9,7 @@ import paho.mqtt.client as mqtt
 import time
 import datetime
 import json
+import logging
 import urllib.request
 import urllib.parse
 
@@ -47,6 +48,7 @@ class OpenWeather:
     DATA_SOURCE_URL = "http://api.openweathermap.org/data/2.5/weather"
 
     def __init__(self):
+        self.logger = logging.getLogger()
         self.temperature = None
         self.city_name = None
         self.main_text = None
@@ -92,11 +94,13 @@ class OpenWeather:
             ## urllib will raise an exception if not 200/etc
             if resp.status == 200:
                 value = resp.read().decode('utf-8')
-                #print("Weather Response is:", value)
+                self.logger.debug("Weather Response is: {value}")
                 weather = json.loads(value)
                 return weather
             else:
-                print(f'Weather fetch failed: status={resp.status}, reason={resp.reason}')
+                self.logger.info(
+                    f'Weather fetch failed: status={resp.status}, reason={resp.reason}'
+                )
                 return None         # ???
 
         # response = urllib.request.urlopen(DATA_SOURCE)
@@ -111,15 +115,24 @@ class OpenWeather:
 
 
 # The callback for when the client receives a CONNACK response from the server.
-def mqtt_on_connect(client, userdata, flags, reason_code, properties):
-    print(f"Connected with result code {reason_code}")
+def mqtt_on_connectv1(client, userdata, flags, reason_code):
+    logger = logging.getLogger()
+    logger.info(f"MQTT: connected with result code = {reason_code}")
+    # Subscribing in on_connect() means that if we lose the connection and
+    # reconnect then subscriptions will be renewed.
+    userdata.on_connect(client)
+
+def mqtt_on_connectv2(client, userdata, flags, reason_code, properties):
+    logger = logging.getLogger()
+    logger.info(f"MQTT: connected with result code = {reason_code}")
     # Subscribing in on_connect() means that if we lose the connection and
     # reconnect then subscriptions will be renewed.
     userdata.on_connect(client)
 
 # The callback for when a PUBLISH message is received from the server.
 def mqtt_on_message(client, userdata, msg):
-    print(msg.topic+" "+str(msg.payload))
+    logger = logging.getLogger()
+    logger.debug(f"MQTT msg: {msg.topic} {str(msg.payload)}")
     userdata.on_message(client, msg)
 
 class MQTT_Listener:
@@ -134,17 +147,17 @@ class MQTT_Listener:
             client_id = ''
             cleanup = True
         mqttc = mqtt.Client(
-            callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
             userdata=self,
             client_id=client_id, clean_session=cleanup,
             transport='tcp'
         )
+            # callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
             # protocol=mqtt.MQTTProtocolVersion.MQTTv311,
         mqttc.username_pw_set(            
             username=secrets["AIO_USERNAME"],
             password=secrets["AIO_KEY"],
         )
-        mqttc.on_connect = mqtt_on_connect
+        mqttc.on_connect = mqtt_on_connectv1
         mqttc.on_message = mqtt_on_message
         # Alt:
         #mqttc.message_callback_add('Porch/#', mqtt_on_message)
@@ -163,13 +176,10 @@ class MQTT_Listener:
 
     def on_connect(self, client):
         # Subscribe to Group
-        print('MQTT on_connect() called.')
         client.subscribe("tpavell/groups/Porch/json")
 
     def on_message(self, client, msg):
-        #print('MQTT on_message() called for', msg.topic)
         data = json.loads(msg.payload.decode('utf-8'))
-        #print('MQTT msg data =', data)
         for key,val in data['feeds'].items():
             #logger.info(f'MQTT update: {key} = {val}')
             self.values[key] = float(val)
@@ -190,11 +200,13 @@ def get_time_strings():
     USE_AMPM = True
     now = datetime.datetime.now()
     if USE_AMPM:
-        timestr = now.strftime('%l:%M:%S %P')
+        timestr = now.strftime('%l:%M %P')
     else:
-        timestr = now.strftime('%H:%M:%S')
-    datestr = now.strftime('%a, %b %e %Y')
-    # 'Tue, Dec 7 2024'
+        timestr = now.strftime('%H:%M')
+    #datestr = now.strftime('%a, %b %e, %Y')
+    # 'Tue, Dec 7, 2024'
+    datestr = now.strftime('%A, %B %e, %Y')
+    # 'Tuesday, December 7, 2024'
 
     return timestr, datestr
 
@@ -204,37 +216,46 @@ class App:
     HEIGHT = 600
 
     def __init__(self):
+        self.logger = logging.getLogger()
         self.running = True
         self.display = None
         self.fonts = None
-        self.size = (self.WIDTH/2, self.HEIGHT/2)
-        self.bgcolor = (60, 0, 60)    # dark purple
-        self.fgcolor = (255, 255, 0)  # yellow
+        self.size = (self.WIDTH, self.HEIGHT)
+        self.bgcolor = (30, 0, 30)    # dark purple
+        self.fgcolor = (255, 255, 120)  # yellow
         #self.fgcolor = (0, 255, 0)   # green
-        self.weather = OpenWeather()
-        self.next_update = 0
+        #self.weather = OpenWeather()
+        #self.next_update = 0
         self.mqtt = MQTT_Listener()
 
     def on_init(self):
         pg.init()
 
-        size = (pg.display.Info().current_w, 
-                pg.display.Info().current_h)
-        print("Default Framebuffer size: %d x %d" % (size[0], size[1]))
-        print(f'Chosen window size: {self.size}')
+        fb_size = (pg.display.Info().current_w,
+                   pg.display.Info().current_h)
+        self.logger.info("Default Framebuffer size: %d x %d" % (fb_size[0], fb_size[1]))
+        self.logger.info(f'Chosen window size: {self.size}')
 
-        self.display = pg.display.set_mode(self.size, pg.SHOWN)
         # Use pygame.FULLSCREEN for kiosk mode
+        if fb_size[1] > self.size[1] + 100:
+            self.display = pg.display.set_mode(self.size, pg.SHOWN)
+        else:
+            self.display = pg.display.set_mode(self.size, pg.FULLSCREEN)
 
-        print('PyGame driver =', pg.display.get_driver())
+        self.logger.info(f'PyGame driver = {pg.display.get_driver()}')
 
         # Initialise font support
         pg.font.init()
         self.fonts = {}
-        self.fonts['CLOCK'] = pg.font.SysFont('freesans', 80)
-        self.fonts['MEDIUM'] = pg.font.SysFont('freesans', 24)
-        self.fonts['SMALL'] = pg.font.SysFont('freesans', 16, bold=True)
-        self.fonts['ICON'] = pg.font.Font('meteocons.ttf', 48)
+        self.fonts['CLOCK'] = pg.font.SysFont('freesans', 200)
+        self.fonts['LARGE'] = pg.font.SysFont('freesans', 100)
+        self.fonts['MEDIUM'] = pg.font.SysFont('freesans', 48)
+        self.fonts['SMALL'] = pg.font.SysFont('freesans', 32)
+        #self.fonts['SMALL'] = pg.font.SysFont('freesans', 16, bold=True)
+        #self.fonts['ICON'] = pg.font.Font('meteocons.ttf', 48)
+
+        # Hide mouse cursor:
+        pg.mouse.set_visible(False)
 
         self.running = True
         return self.running
@@ -248,12 +269,14 @@ class App:
                 self.running = False
 
     def on_loop(self):
-        now = time.time()
-        if now > self.next_update:
-            self.weather.update_weather(self.weather.get_weather_info())
-            print(f'Weather: {self.weather.city_name} - {self.weather.temperature}')
-            # wait 15 min
-            self.next_update = now + 15 * 60 
+        # now = time.time()
+        # if now > self.next_update:
+        #     self.weather.update_weather(self.weather.get_weather_info())
+        #     self.logger.info(
+        #         f'Weather: {self.weather.city_name} - {self.weather.temperature}'
+        #     )
+        #     # wait 15 min
+        #     self.next_update = now + 15 * 60
 
         # waiting too long hurts keypress latency
         pg.time.wait(100)       # in msec
@@ -267,64 +290,69 @@ class App:
             timestr,
             True, 
             self.fgcolor)
-        self.display.blit(surface, (30, 30))
+        self.display.blit(surface, (80, 50))
         surface = self.fonts['MEDIUM'].render(
             datestr,
             True, 
             self.fgcolor)
-        self.display.blit(surface, (50, 110))
+        self.display.blit(surface, (270, 270))
 
-        surface = self.fonts['MEDIUM'].render(
-            self.weather.city_name, 
-            True, 
-            self.fgcolor)
-        self.display.blit(surface, (50, 190))
-        surface = self.fonts['ICON'].render(
-            self.weather.icon, 
-            True, 
-            self.fgcolor)
-        self.display.blit(surface, (50, 230))
-        surface = self.fonts['MEDIUM'].render(
-            self.weather.temperature, 
-            True, 
-            self.fgcolor)
-        self.display.blit(surface, (120, 230))
-        surface = self.fonts['SMALL'].render(
-            self.weather.description, 
-            True, 
-            self.fgcolor)
-        self.display.blit(surface, (120, 260))
+        # surface = self.fonts['MEDIUM'].render(
+        #     self.weather.city_name,
+        #     True,
+        #     self.fgcolor)
+        # self.display.blit(surface, (50, 190))
+        # surface = self.fonts['ICON'].render(
+        #     self.weather.icon,
+        #     True,
+        #     self.fgcolor)
+        # self.display.blit(surface, (50, 230))
+        # surface = self.fonts['MEDIUM'].render(
+        #     self.weather.temperature,
+        #     True,
+        #     self.fgcolor)
+        # self.display.blit(surface, (120, 230))
+        # surface = self.fonts['SMALL'].render(
+        #     self.weather.description,
+        #     True,
+        #     self.fgcolor)
+        # self.display.blit(surface, (120, 260))
 
         probe_vals = self.mqtt.get_curr_values()
-        surface = self.fonts['MEDIUM'].render(
-            'Outdoor probe',
+        surface = self.fonts['SMALL'].render(
+            'Outdoor:',
             True, 
             self.fgcolor)
-        self.display.blit(surface, (300, 190))
+        self.display.blit(surface, (110, 400))
         temp = probe_vals.get('alt-temp', 0)
-        surface = self.fonts['MEDIUM'].render(
+        surface = self.fonts['LARGE'].render(
             f'{temp:.0f} °F',
             True, 
             self.fgcolor)
-        self.display.blit(surface, (300, 230))
-        batt = probe_vals.get('battery-charge', 42)
-        surface = self.fonts['SMALL'].render(
-            f'Bat: {batt:.0f} %',
-            True, 
-            self.fgcolor)
-        self.display.blit(surface, (300, 260))
+        self.display.blit(surface, (100, 450))
+
         humid = probe_vals.get('alt-humidity', 0)
         surface = self.fonts['SMALL'].render(
-            f'Hum: {humid:.1f} %',
+            f'Hum:  {humid:.0f} %',
             True, 
             self.fgcolor)
-        self.display.blit(surface, (390, 230))
+        self.display.blit(surface, (600, 400))
         bar = probe_vals.get('pressure', 42)
         surface = self.fonts['SMALL'].render(
-            f'Bar: {bar:.1f} in',
+            f'Bar:  {bar:.1f} in',
             True, 
             self.fgcolor)
-        self.display.blit(surface, (390, 260))
+        self.display.blit(surface, (600, 450))
+        batt = probe_vals.get('battery-charge', 42)
+        surface = self.fonts['SMALL'].render(
+            f'Bat:  {batt:.0f} %',
+            True, 
+            self.fgcolor)
+        self.display.blit(surface, (600, 500))
+
+        pad = 10
+        rect = (pad, pad, self.WIDTH-2*pad, self.HEIGHT-2*pad)
+        pg.draw.rect(self.display, self.fgcolor, rect, width=1)
 
         pg.display.update()
 
@@ -346,6 +374,9 @@ class App:
 
 
 def main():
+    logging.basicConfig(format='%(asctime)s - %(levelname)s: %(message)s',
+                        level=logging.INFO)
+
     theApp = App()
     theApp.on_execute()
 
@@ -354,100 +385,36 @@ if __name__ == "__main__" :
     main()
 
 
-
+## RPi output:
+# PyGame driver = KMSDRM
 # Font list:
 # c059
-# caladea
 # cantarell
-# carlito
-# comfortaa
 # d050000l
 # dejavusans
 # dejavusansmono
-# droidarabickufi
-# droidsans
-# droidsansarmenian
-# droidsansdevanagari
-# droidsansethiopic
+# dejavuserif
 # droidsansfallback
-# droidsansgeorgian
-# droidsanshebrew
-# droidsansjapanese
-# droidsanstamil
-# droidsansthai
+# freemono
 # freesans
-# jomolhari
-# khmerossystem
-# latinmodernmono
-# latinmodernmonocaps
-# latinmodernmonolight
-# latinmodernmonolightcond
-# latinmodernmonoprop
-# latinmodernmonoproplight
-# latinmodernmonoslanted
-# latinmodernroman
-# latinmodernromancaps
-# latinmodernromandemi
-# latinmodernromandunhill
-# latinmodernromanslanted
-# latinmodernromanunslanted
-# latinmodernsans
-# latinmodernsansdemicond
-# latinmodernsansquotation
+# freeserif
 # liberationmono
 # liberationsans
 # liberationserif
-# lohitassamese
-# lohitbengali
-# lohitdevanagari
-# lohitgujarati
-# lohitkannada
-# lohitmarathi
-# lohitodia
-# lohittamil
-# lohittelugu
-# mingzat
 # nimbusmonops
 # nimbusroman
 # nimbussans
 # nimbussansnarrow
-# notocoloremoji
-# notonaskharabic
-# notosans
-# notosansarmenian
-# notosanscanadianaboriginal
-# notosanscherokee
-# notosanscjkhk
-# notosanscjkjp
-# notosanscjkkr
-# notosanscjksc
-# notosanscjktc
-# notosansethiopic
-# notosansgeorgian
-# notosansgurmukhi
-# notosanshebrew
-# notosanslao
-# notosansmath
+# notomono
 # notosansmono
-# notosansmonocjkhk
-# notosansmonocjkjp
-# notosansmonocjkkr
-# notosansmonocjksc
-# notosansmonocjktc
-# notosanssinhala
-# notosansthaana
-# notoserif
-# nuosusil
-# opensans
-# opensymbol
 # p052
-# padauk
-# paktypenaskhbasic
-# ritmeeranew
-# sourcecodepro
+# piboto
+# pibotocondensed
+# pibotolt
+# quicksand
+# quicksandlight
+# quicksandmedium
 # standardsymbolsps
-# stix
-# symbola
 # urwbookman
 # urwgothic
 # z003

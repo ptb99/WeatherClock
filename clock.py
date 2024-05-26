@@ -5,169 +5,14 @@
 
 
 import pygame as pg
-import paho.mqtt.client as mqtt
-#import time
+import time
 import datetime
-import json
 import logging
-import urllib.request
-import urllib.parse
 
-from secrets import secrets
-
-
-# Map the OpenWeatherMap icon code to the appropriate font character
-# See http://www.alessioatzeni.com/meteocons/ for icons
-ICON_MAP = {
-    "01d": "B",
-    "01n": "C",
-    "02d": "H",
-    "02n": "I",
-    "03d": "N",
-    "03n": "N",
-    "04d": "Y",
-    "04n": "Y",
-    "09d": "Q",
-    "09n": "Q",
-    "10d": "R",
-    "10n": "R",
-    "11d": "Z",
-    "11n": "Z",
-    "13d": "W",
-    "13n": "W",
-    "50d": "J",
-    "50n": "K",
-}
-
-class OpenWeather:
-    """Class to wrap API for OpenWeather.org"""
-    # Use cityname, country code where countrycode is ISO3166 format.
-    # E.g. "New York, US" or "London, GB"
-    LOCATION = "San Jose, US"
-    DATA_SOURCE_URL = "http://api.openweathermap.org/data/2.5/weather"
-
-    def __init__(self):
-        self.logger = logging.getLogger()
-        self.temperature = None
-        self.city_name = None
-        self.main_text = None
-        self.description = None
-        #self.weather_icon = None
-        #self.time_text = None
-        self.use_celsius = False # set in constructor?
-
-    def update_weather(self, weather):
-        self.city_name = weather["name"] + ", " + weather["sys"]["country"]
-        self.main_text = weather["weather"][0]["main"]
-        self.icon = ICON_MAP[weather["weather"][0]["icon"]]
-
-        d = weather["weather"][0]["description"]
-        self.description = d[0].upper() + d[1:]
-        # "thunderstorm with heavy drizzle"
-
-        temp = weather["main"]["temp"] - 273.15  # its...in kelvin
-        if self.use_celsius:
-            self.temperature = f'{temp:.1f} °C'
-        else:
-            temp = ((temp * 9 / 5) + 32)
-            self.temperature = f'{temp:.1f} °F'
-
-    def get_weather_info(self):
-        # You'll need to get a token from openweathermap.org, put it here:
-        OPEN_WEATHER_TOKEN = secrets['OPEN_WEATHER_TOKEN']
-        if len(OPEN_WEATHER_TOKEN) == 0:
-            raise RuntimeError(
-                "You need to set your token first. If you don't already have one,"
-                " you can register for a free account at "
-                "https://home.openweathermap.org/users/sign_up"
-            )
-
-        # Set up where we'll be fetching data from
-        params = {"q": self.LOCATION, "appid": OPEN_WEATHER_TOKEN}
-        DATA_SOURCE = self.DATA_SOURCE_URL + "?" + urllib.parse.urlencode(params)
-        # quoted_location = LOCATION.replace(' ', '+')
-        # DATA_SOURCE = ( DATA_SOURCE_URL + "?" + "q=" + quoted_location +
-        #                 "&appid=" + OPEN_WEATHER_TOKEN )
-
-        with urllib.request.urlopen(DATA_SOURCE) as resp:
-            ## urllib will raise an exception if not 200/etc
-            if resp.status == 200:
-                value = resp.read().decode('utf-8')
-                self.logger.debug("Weather Response is: {value}")
-                weather = json.loads(value)
-                return weather
-            else:
-                self.logger.info(
-                    f'Weather fetch failed: status={resp.status}, reason={resp.reason}'
-                )
-                return None         # ???
-
-        # response = urllib.request.urlopen(DATA_SOURCE)
-        # if response.getcode() == 200:
-        #     value = response.read()
-        #     #print("Response is", value)
-        #     weather = json.loads(value.decode('utf-8'))
-        #     return weather
-        # else:
-        #     return None         # ???
-
-
-
-class MQTT_Listener:
-    def __init__(self, secure=False, persist=False):
-        self.logger = logging.getLogger()
-        self.values = {}
-        # Initialize a new MQTT Client object
-        if persist:
-            # use persistent conn and queued messages
-            client_id = 'Clock_123'
-            cleanup = False
-        else:
-            client_id = ''
-            cleanup = True
-        mqttc = mqtt.Client(
-            userdata=self,
-            client_id=client_id, clean_session=cleanup,
-            transport='tcp'
-        )
-            # callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-            # protocol=mqtt.MQTTProtocolVersion.MQTTv311,
-        mqttc.username_pw_set(            
-            username=secrets["AIO_USERNAME"],
-            password=secrets["AIO_KEY"],
-        )
-        mqttc.on_connect = self.on_connect
-        mqttc.on_message = self.on_message
-        # Alt:
-        #mqttc.message_callback_add('Porch/#', mqtt_on_message)
-        if secure:
-            mqttc.tls_set_context()
-            mqttc.connect(
-                host="io.adafruit.com", port=8883, keepalive=60
-            )
-        else:
-            mqttc.connect(
-                host="io.adafruit.com", port=1883, keepalive=60
-            )
-        # start a new thread
-        mqttc.loop_start()
-        self.mqtt_client = mqttc
-
-    # For v2, use this signature:
-    #def on_connect(self, client, userdata, flags, reason_code, properties):
-    def on_connect(self, client, userdata, flags, reason_code):
-        # Subscribe to Group
-        client.subscribe("tpavell/groups/Porch/json")
-
-    def on_message(self, client, userdata, msg):
-        self.logger.debug(f"MQTT msg: {msg.topic} {str(msg.payload)}")
-        data = json.loads(msg.payload.decode('utf-8'))
-        for key,val in data['feeds'].items():
-            #logger.info(f'MQTT update: {key} = {val}')
-            self.values[key] = float(val)
-
-    def get_curr_values(self):
-        return self.values
+#from secrets import secrets
+#from weather import OpenWeather
+from mqtt import MQTT_Listener
+#from probe import BMG_Probe
 
 
 def get_time_strings():
@@ -189,6 +34,11 @@ def get_time_strings():
 class App:
     WIDTH = 1024
     HEIGHT = 600
+    BGCOLOR = (30, 0, 40)    # dark purple
+    #FGCOLOR = (255, 255, 120)  # light yellow
+    FGCOLOR = (178, 235, 242)  # light blue
+    MQTT_SERVER = "io.adafruit.com"
+    UPDATE_INTERVAL = 5 * 60
 
     def __init__(self):
         self.logger = logging.getLogger()
@@ -196,16 +46,15 @@ class App:
         self.display = None
         self.fonts = None
         self.size = (self.WIDTH, self.HEIGHT)
-        self.bgcolor = (30, 0, 40)    # dark purple
-        self.fgcolor = (255, 255, 120)  # yellow
-        #self.fgcolor = (0, 255, 0)   # green
-        #self.weather = OpenWeather()
-        #self.next_update = 0
-        self.mqtt = MQTT_Listener(secure=True, persist=False)
+        self.next_update = 0
+        # self.weather = OpenWeather()
+        self.mqtt = MQTT_Listener(host=self.MQTT_SERVER, secure=True)
+        #self.sensor = BMG_Probe()
 
     def on_init(self):
         pg.init()
 
+        # print out some info
         fb_size = (pg.display.Info().current_w,
                    pg.display.Info().current_h)
         self.logger.info("Default Framebuffer size: %d x %d" %
@@ -224,7 +73,7 @@ class App:
         pg.font.init()
         self.fonts = {}
         self.fonts['CLOCK'] = pg.font.SysFont('freesans', 200)
-        self.fonts['LARGE'] = pg.font.SysFont('freesans', 100)
+        self.fonts['LARGE'] = pg.font.SysFont('freesans', 120)
         self.fonts['MEDIUM'] = pg.font.SysFont('freesans', 48)
         self.fonts['SMALL'] = pg.font.SysFont('freesans', 32)
         #self.fonts['SMALL'] = pg.font.SysFont('freesans', 16, bold=True)
@@ -235,7 +84,6 @@ class App:
 
         self.running = True
         return self.running
-
  
     def on_event(self, event):
         if event.type == pg.QUIT:
@@ -247,90 +95,133 @@ class App:
         # Could maybe use mouse-presses for UI buttons (someday)...
 
     def on_loop(self):
-        # now = time.time()
-        # if now > self.next_update:
-        #     self.weather.update_weather(self.weather.get_weather_info())
-        #     self.logger.info(
-        #         f'Weather: {self.weather.city_name} - {self.weather.temperature}'
-        #     )
-        #     # wait 15 min
-        #     self.next_update = now + 15 * 60
+        now = time.time()
+        if now > self.next_update:
+            self.do_update()
+            self.next_update = now + self.UPDATE_INTERVAL
 
         # waiting too long hurts keypress latency
         pg.time.wait(100)       # in msec
 
+    def do_update(self):
+        self.logger.info('do_update() called...')
+
+        #     self.weather.update_weather(self.weather.get_weather_info())
+        #     self.logger.info(
+        #         f'Weather: {self.weather.city_name} - {self.weather.temperature}'
+        #     )
+
+        # self.sensor.update()
+        # self.logger.info(f'Local sensor: {self.sensor.temperature}')
+
 
     def on_render(self):
-        self.display.fill(self.bgcolor)
+        self.display.fill(self.BGCOLOR)
 
         timestr, datestr = get_time_strings()
         surface = self.fonts['CLOCK'].render(
             timestr,
             True, 
-            self.fgcolor)
+            self.FGCOLOR)
         self.display.blit(surface, (80, 50))
         surface = self.fonts['MEDIUM'].render(
             datestr,
             True, 
-            self.fgcolor)
-        self.display.blit(surface, (270, 270))
+            self.FGCOLOR)
+        self.display.blit(surface, (260, 270))
 
         # surface = self.fonts['MEDIUM'].render(
         #     self.weather.city_name,
         #     True,
-        #     self.fgcolor)
+        #     self.FGCOLOR)
         # self.display.blit(surface, (50, 190))
         # surface = self.fonts['ICON'].render(
         #     self.weather.icon,
         #     True,
-        #     self.fgcolor)
+        #     self.FGCOLOR)
         # self.display.blit(surface, (50, 230))
         # surface = self.fonts['MEDIUM'].render(
         #     self.weather.temperature,
         #     True,
-        #     self.fgcolor)
+        #     self.FGCOLOR)
         # self.display.blit(surface, (120, 230))
         # surface = self.fonts['SMALL'].render(
         #     self.weather.description,
         #     True,
-        #     self.fgcolor)
+        #     self.FGCOLOR)
         # self.display.blit(surface, (120, 260))
 
+        block_x = 780
         probe_vals = self.mqtt.get_curr_values()
         surface = self.fonts['SMALL'].render(
             'Outdoor:',
             True, 
-            self.fgcolor)
-        self.display.blit(surface, (110, 400))
+            self.FGCOLOR)
+        self.display.blit(surface, (block_x+15, 400))
         temp = probe_vals.get('alt-temp', 0)
         surface = self.fonts['LARGE'].render(
-            f'{temp:.0f}°F',
+            f'{temp:.0f}°',
             True, 
-            self.fgcolor)
-        self.display.blit(surface, (100, 450))
+            self.FGCOLOR)
+        self.display.blit(surface, (block_x, 450))
 
+        block_x = 560
         humid = probe_vals.get('alt-humidity', 0)
         surface = self.fonts['SMALL'].render(
             f'Hum:  {humid:.0f} %',
             True, 
-            self.fgcolor)
-        self.display.blit(surface, (600, 400))
+            self.FGCOLOR)
+        self.display.blit(surface, (block_x, 400))
         bar = probe_vals.get('pressure', 0)
         surface = self.fonts['SMALL'].render(
             f'Bar:  {bar:.1f} in',
             True, 
-            self.fgcolor)
-        self.display.blit(surface, (600, 450))
+            self.FGCOLOR)
+        self.display.blit(surface, (block_x, 460))
         batt = probe_vals.get('battery-charge', 0)
         surface = self.fonts['SMALL'].render(
             f'Bat:  {batt:.0f} %',
             True, 
-            self.fgcolor)
-        self.display.blit(surface, (600, 500))
+            self.FGCOLOR)
+        self.display.blit(surface, (block_x, 520))
+
+        block_x = 50
+        sensor_vals = {}
+        surface = self.fonts['SMALL'].render(
+            'Indoor:',
+            True,
+            self.FGCOLOR)
+        self.display.blit(surface, (block_x+15, 400))
+        temp = sensor_vals.get('temperature', 42)
+        surface = self.fonts['LARGE'].render(
+            f'{temp:.0f}°',
+            True,
+            self.FGCOLOR)
+        self.display.blit(surface, (block_x, 450))
+
+        block_x = 290
+        #humid = sensor_vals.get('humidity', 42)
+        surface = self.fonts['SMALL'].render(
+            f'Hum:  {humid:.0f} %',
+            True,
+            self.FGCOLOR)
+        self.display.blit(surface, (block_x, 400))
+        #bar = sensor_vals.get('pressure', 0)
+        surface = self.fonts['SMALL'].render(
+            f'Bar:  {bar:.1f} in',
+            True,
+            self.FGCOLOR)
+        self.display.blit(surface, (block_x, 460))
+        batt = sensor_vals.get('VOC', 42)
+        surface = self.fonts['SMALL'].render(
+            f'VOC:  {batt:.0f} %',
+            True,
+            self.FGCOLOR)
+        self.display.blit(surface, (block_x, 520))
 
         pad = 10
         rect = (pad, pad, self.WIDTH-2*pad, self.HEIGHT-2*pad)
-        pg.draw.rect(self.display, self.fgcolor, rect, width=1)
+        pg.draw.rect(self.display, self.FGCOLOR, rect, width=1)
 
         pg.display.update()
 

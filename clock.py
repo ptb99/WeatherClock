@@ -6,7 +6,7 @@
 
 import pygame as pg
 import paho.mqtt.client as mqtt
-import time
+#import time
 import datetime
 import json
 import logging
@@ -38,7 +38,6 @@ ICON_MAP = {
     "50d": "J",
     "50n": "K",
 }
-
 
 class OpenWeather:
     """Class to wrap API for OpenWeather.org"""
@@ -114,29 +113,9 @@ class OpenWeather:
 
 
 
-# The callback for when the client receives a CONNACK response from the server.
-def mqtt_on_connectv1(client, userdata, flags, reason_code):
-    logger = logging.getLogger()
-    logger.info(f"MQTT: connected with result code = {reason_code}")
-    # Subscribing in on_connect() means that if we lose the connection and
-    # reconnect then subscriptions will be renewed.
-    userdata.on_connect(client)
-
-def mqtt_on_connectv2(client, userdata, flags, reason_code, properties):
-    logger = logging.getLogger()
-    logger.info(f"MQTT: connected with result code = {reason_code}")
-    # Subscribing in on_connect() means that if we lose the connection and
-    # reconnect then subscriptions will be renewed.
-    userdata.on_connect(client)
-
-# The callback for when a PUBLISH message is received from the server.
-def mqtt_on_message(client, userdata, msg):
-    logger = logging.getLogger()
-    logger.debug(f"MQTT msg: {msg.topic} {str(msg.payload)}")
-    userdata.on_message(client, msg)
-
 class MQTT_Listener:
     def __init__(self, secure=False, persist=False):
+        self.logger = logging.getLogger()
         self.values = {}
         # Initialize a new MQTT Client object
         if persist:
@@ -157,8 +136,8 @@ class MQTT_Listener:
             username=secrets["AIO_USERNAME"],
             password=secrets["AIO_KEY"],
         )
-        mqttc.on_connect = mqtt_on_connectv1
-        mqttc.on_message = mqtt_on_message
+        mqttc.on_connect = self.on_connect
+        mqttc.on_message = self.on_message
         # Alt:
         #mqttc.message_callback_add('Porch/#', mqtt_on_message)
         if secure:
@@ -174,11 +153,14 @@ class MQTT_Listener:
         mqttc.loop_start()
         self.mqtt_client = mqttc
 
-    def on_connect(self, client):
+    # For v2, use this signature:
+    #def on_connect(self, client, userdata, flags, reason_code, properties):
+    def on_connect(self, client, userdata, flags, reason_code):
         # Subscribe to Group
         client.subscribe("tpavell/groups/Porch/json")
 
-    def on_message(self, client, msg):
+    def on_message(self, client, userdata, msg):
+        self.logger.debug(f"MQTT msg: {msg.topic} {str(msg.payload)}")
         data = json.loads(msg.payload.decode('utf-8'))
         for key,val in data['feeds'].items():
             #logger.info(f'MQTT update: {key} = {val}')
@@ -186,13 +168,6 @@ class MQTT_Listener:
 
     def get_curr_values(self):
         return self.values
-
-# # IP address of your MQTT broker, using ipconfig to look up it
-# client.connect('192.168.1.109', 1883)
-# # start a new thread
-# client.loop_start()
-# # 'greenhouse/#' means subscribe all topic under greenhouse
-# client.subscribe('greenhouse/#')
 
 
 def get_time_strings():
@@ -221,19 +196,20 @@ class App:
         self.display = None
         self.fonts = None
         self.size = (self.WIDTH, self.HEIGHT)
-        self.bgcolor = (30, 0, 30)    # dark purple
+        self.bgcolor = (30, 0, 40)    # dark purple
         self.fgcolor = (255, 255, 120)  # yellow
         #self.fgcolor = (0, 255, 0)   # green
         #self.weather = OpenWeather()
         #self.next_update = 0
-        self.mqtt = MQTT_Listener()
+        self.mqtt = MQTT_Listener(secure=True, persist=False)
 
     def on_init(self):
         pg.init()
 
         fb_size = (pg.display.Info().current_w,
                    pg.display.Info().current_h)
-        self.logger.info("Default Framebuffer size: %d x %d" % (fb_size[0], fb_size[1]))
+        self.logger.info("Default Framebuffer size: %d x %d" %
+                         (fb_size[0], fb_size[1]))
         self.logger.info(f'Chosen window size: {self.size}')
 
         # Use pygame.FULLSCREEN for kiosk mode
@@ -259,6 +235,7 @@ class App:
 
         self.running = True
         return self.running
+
  
     def on_event(self, event):
         if event.type == pg.QUIT:
@@ -267,6 +244,7 @@ class App:
             keys = pg.key.get_pressed()
             if keys[pg.K_q]:
                 self.running = False
+        # Could maybe use mouse-presses for UI buttons (someday)...
 
     def on_loop(self):
         # now = time.time()
@@ -326,7 +304,7 @@ class App:
         self.display.blit(surface, (110, 400))
         temp = probe_vals.get('alt-temp', 0)
         surface = self.fonts['LARGE'].render(
-            f'{temp:.0f} °F',
+            f'{temp:.0f}°F',
             True, 
             self.fgcolor)
         self.display.blit(surface, (100, 450))
@@ -337,13 +315,13 @@ class App:
             True, 
             self.fgcolor)
         self.display.blit(surface, (600, 400))
-        bar = probe_vals.get('pressure', 42)
+        bar = probe_vals.get('pressure', 0)
         surface = self.fonts['SMALL'].render(
             f'Bar:  {bar:.1f} in',
             True, 
             self.fgcolor)
         self.display.blit(surface, (600, 450))
-        batt = probe_vals.get('battery-charge', 42)
+        batt = probe_vals.get('battery-charge', 0)
         surface = self.fonts['SMALL'].render(
             f'Bat:  {batt:.0f} %',
             True, 
@@ -382,6 +360,7 @@ def main():
 
     
 if __name__ == "__main__" :
+    # Any use for argv's?
     main()
 
 

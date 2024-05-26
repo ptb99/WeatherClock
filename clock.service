@@ -1,0 +1,18 @@
+##
+## Unit config file for systemd to loop our clock script
+##      (copy this to /etc/systemd/system/clock.service)
+##
+
+[Unit]
+Description=PiCounter
+After=network.target
+
+[Service]
+Environment=SDL_VIDEODRIVER=kmsdrm
+WorkingDirectory=/root/Projects/WeatherClock
+ExecStart=/usr/bin/python3 /root/Projects/WeatherClock/clock.py
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target

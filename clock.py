@@ -12,7 +12,7 @@ import logging
 #from secrets import secrets
 #from weather import OpenWeather
 from mqtt import MQTT_Listener
-#from probe import BMG_Probe
+from sensor import BME_Probe
 
 
 def get_time_strings():
@@ -34,11 +34,12 @@ def get_time_strings():
 class App:
     WIDTH = 1024
     HEIGHT = 600
-    BGCOLOR = (30, 0, 40)    # dark purple
+    #BGCOLOR = (30, 0, 40)    # dark purple
+    BGCOLOR = (0, 0, 0)       # black
     #FGCOLOR = (255, 255, 120)  # light yellow
     FGCOLOR = (178, 235, 242)  # light blue
     MQTT_SERVER = "io.adafruit.com"
-    UPDATE_INTERVAL = 5 * 60
+    UPDATE_INTERVAL = 1 * 60
 
     def __init__(self):
         self.logger = logging.getLogger()
@@ -49,7 +50,7 @@ class App:
         self.next_update = 0
         # self.weather = OpenWeather()
         self.mqtt = MQTT_Listener(host=self.MQTT_SERVER, secure=True)
-        #self.sensor = BMG_Probe()
+        self.sensor = BME_Probe()
 
     def on_init(self):
         pg.init()
@@ -68,6 +69,8 @@ class App:
             self.display = pg.display.set_mode(self.size, pg.FULLSCREEN)
 
         self.logger.info(f'PyGame driver = {pg.display.get_driver()}')
+        self.logger.info(f'BME680 driver: variant={self.sensor.bme._variant} '
+                         f'ambient temp={self.sensor.bme.ambient_temperature}')
 
         # Initialise font support
         pg.font.init()
@@ -83,6 +86,7 @@ class App:
         pg.mouse.set_visible(False)
 
         self.running = True
+        time.sleep(1)           # brief delay to let driver init settle
         return self.running
  
     def on_event(self, event):
@@ -104,15 +108,33 @@ class App:
         pg.time.wait(100)       # in msec
 
     def do_update(self):
-        self.logger.info('do_update() called...')
+        self.logger.debug('do_update() called...')
 
         #     self.weather.update_weather(self.weather.get_weather_info())
         #     self.logger.info(
         #         f'Weather: {self.weather.city_name} - {self.weather.temperature}'
         #     )
 
-        # self.sensor.update()
-        # self.logger.info(f'Local sensor: {self.sensor.temperature}')
+        #start = time.perf_counter()
+        start = time.time()
+        for _ in range(10):
+            if self.sensor.read_data():
+                #stop = time.perf_counter()
+                stop = time.time()
+                duration = (stop - start) * 1000
+                # self.logger.info(
+                #     f'sensor: status {self.sensor.bme.data.status} '
+                #     f'gas idx {self.sensor.bme.data.gas_index} '
+                #     f'meas idx {self.sensor.bme.data.meas_index}'
+                # )
+                self.logger.info(
+                    f'sensor: Temp: {self.sensor.get_temp():.3f}  '
+                    f'VOC: {self.sensor.get_voc():.2f}  '
+                    f'in {duration:.3f} msec'
+                )
+                return True
+        self.logger.warning('BME680 sensor failed')
+        return False
 
 
     def on_render(self):
@@ -186,13 +208,12 @@ class App:
         self.display.blit(surface, (block_x, 520))
 
         block_x = 50
-        sensor_vals = {}
         surface = self.fonts['SMALL'].render(
             'Indoor:',
             True,
             self.FGCOLOR)
         self.display.blit(surface, (block_x+15, 400))
-        temp = sensor_vals.get('temperature', 42)
+        temp = self.sensor.get_temp()
         surface = self.fonts['LARGE'].render(
             f'{temp:.0f}°',
             True,
@@ -200,21 +221,21 @@ class App:
         self.display.blit(surface, (block_x, 450))
 
         block_x = 290
-        #humid = sensor_vals.get('humidity', 42)
+        humid = self.sensor.get_humidity()
         surface = self.fonts['SMALL'].render(
             f'Hum:  {humid:.0f} %',
             True,
             self.FGCOLOR)
         self.display.blit(surface, (block_x, 400))
-        #bar = sensor_vals.get('pressure', 0)
+        barom = self.sensor.get_barom()
         surface = self.fonts['SMALL'].render(
-            f'Bar:  {bar:.1f} in',
+            f'Bar:  {barom:.1f} in',
             True,
             self.FGCOLOR)
         self.display.blit(surface, (block_x, 460))
-        batt = sensor_vals.get('VOC', 42)
+        voc = self.sensor.get_voc()/1000
         surface = self.fonts['SMALL'].render(
-            f'VOC:  {batt:.0f} %',
+            f'VOC:  {voc:.0f} kΩ',
             True,
             self.FGCOLOR)
         self.display.blit(surface, (block_x, 520))

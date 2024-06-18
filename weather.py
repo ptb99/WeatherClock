@@ -105,3 +105,18 @@ class OpenWeather:
         # else:
         #     return None         # ???
 
+
+
+def main():
+    weather = OpenWeather()
+    weather.update_weather(weather.get_weather_info())
+
+    print('city=', weather.city_name)
+    print('icon=', weather.icon)
+    print('main=', weather.main_text)
+    print('desc=', weather.description)
+    print('temp=', weather.temperature)
+
+
+if __name__ == "__main__" :
+    main()

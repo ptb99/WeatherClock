@@ -73,9 +73,9 @@ class BME_Probe:
     TARGET_ADDR = 0x77   # default seems to be I2C_ADDR_SECONDARY??
 
     ## Other calibration
-    TEMP_OFFSET = -2.7             # added to temp in C before returning
+    TEMP_OFFSET = -3.5             # added to temp in C before returning
     #GAS_BASELINE = 108600         # based on burn-in measurement
-    GAS_BASELINE = 124000          # based on burn-in measurement
+    GAS_BASELINE = 400_000          # based on burn-in measurement
 
     # tags for a complete set of measurement results
     FIELDS = ('temperature', 'humidity', 'pressure', 'gas_resistance')
@@ -86,8 +86,8 @@ class BME_Probe:
         try:
             self.bus = smbus2.SMBus(self.BUS_NUMBER)
             self.bme = bme680.BME680(i2c_addr=self.TARGET_ADDR, i2c_device=self.bus)
-            self.logger.info(f'BME680 driver: variant={self.sensor.bme._variant} '
-                             f'ambient temp={self.sensor.bme.ambient_temperature}')
+            self.logger.info(f'BME680 driver: variant={self.bme._variant} '
+                             f'ambient temp={self.bme.ambient_temperature}')
         except (RuntimeError, IOError, PermissionError):
             self.bme = DummyBME680()
         # SMBus(1) is the default if i2c_device not specified...
@@ -115,7 +115,7 @@ class BME_Probe:
 
         # Up to 10 heater profiles can be configured, each
         # with their own temperature and duration.
-        self.bme.set_gas_heater_profile(320, 900, nb_profile=1)
+        self.bme.set_gas_heater_profile(320, 500, nb_profile=1)
         self.bme.select_gas_heater_profile(1)
 
         # Initially, just ignore VOC and read the other measurements
@@ -142,6 +142,7 @@ class BME_Probe:
                results['gas_resistance'] = data.gas_resistance
             else:
                results['gas_resistance'] = 0
+            self.logger.debug(f'sensor read_data(): {results}')
             return results
         else:
             return None
@@ -162,7 +163,7 @@ class BME_Probe:
         elapsed_temps = 0
 
         # First read temp/humid/pressure w/o VOC
-        for _ in range(NUM_PTS):
+        for _ in range(2*NUM_PTS):
             start = time.time()
             results = self.read_data(do_voc=False)
             if results:
@@ -182,7 +183,7 @@ class BME_Probe:
         elapsed_vocs = 0
 
         # Then do a bunch of VOC measurement
-        for _ in range(2*NUM_PTS):
+        for _ in range(3*NUM_PTS):
             start = time.time()
             results = self.read_data(do_voc=True)
             if results:
@@ -195,13 +196,14 @@ class BME_Probe:
         elapsed_vocs = (stop_vocs - start_vocs)
         duration_total = stop_vocs - start_reading
         self.logger.info(f'sensor read_loop(): {duration_total:.3f}s = '
-              f'Temps: {NUM_PTS} in {duration_temps*1000:.3f}ms for {elapsed_temps:.3f}s, '
-              f'VOCs: {2*NUM_PTS} in {duration_vocs*1000:.3f}ms for {elapsed_vocs:.3f}s'
+              f'Temps: {2*NUM_PTS} in {duration_temps*1000:.3f}ms for {elapsed_temps:.3f}s, '
+              f'VOCs: {3*NUM_PTS} in {duration_vocs*1000:.3f}ms for {elapsed_vocs:.3f}s'
             )
 
         # average the last 5 points
         results = {tag: avg_last_n(points[tag], n=NUM_PTS) for tag in self.FIELDS}
         self.last_readings = results
+        self.logger.info(f'sensor read_loop(): {results}')
         return results
 
     def get_curr_temp(self):
@@ -294,6 +296,8 @@ def test():
                     f'Bar: {sensor.get_last_barom():.1f}in  '
                     f'VOC: {sensor.get_last_voc()/1000:.2f} kOhm  '
                 )
+                # addl time between VOC and next temp reading
+                time.sleep(20)
 
             time.sleep(INTVL)
 

@@ -45,6 +45,8 @@ class App:
     BGCOLOR = (0, 0, 0)       # black
     #FGCOLOR = (255, 255, 120)  # light yellow
     FGCOLOR = (178, 235, 242)  # light blue
+    FGWARNING = (255, 255, 0)  # yellow
+    FGERROR = (255, 0 , 0)     # red
     MQTT_SERVER = "io.adafruit.com"
     UPDATE_INTERVAL = 1 * 60
 
@@ -116,7 +118,7 @@ class App:
 
         # waiting too long hurts keypress latency
         #pg.time.wait(100)       # in msec
-        self.clock.tick(10)
+        self.clock.tick(1)
 
 
     async def update_start(self):
@@ -130,10 +132,22 @@ class App:
 
         return results
 
+    async def update_end(self, task):
+        # wait for the BME680 update task to finish
+        await task
+        values = [('Indoor-Temp', self.sensor.get_last_temp()),
+                  ('Indoor-Humidity', self.sensor.get_last_humidity()),
+                  ('Indoor-Pressure', self.sensor.get_last_barom()),
+                  ('Indoor-VOC', self.sensor.get_last_voc()),
+                  ]
+        # in theory, this should be an async publish
+        self.mqtt.publish_indoor(values)
+
     def do_update(self):
         self.logger.debug('do_update() called...')
 
-        self.bgloop.create_task(self.update_start())
+        task = self.bgloop.create_task(self.update_start())
+        self.bgloop.create_task(self.update_end(task))
 
         #     self.weather.update_weather(self.weather.get_weather_info())
         #     self.logger.info(
@@ -240,10 +254,16 @@ class App:
             self.FGCOLOR)
         self.display.blit(surface, (block_x, 460))
         voc = self.sensor.get_last_voc()/1000
+        if voc < 20:
+            color = self.FGERROR
+        elif voc < 100:
+            color = self.FGWARNING
+        else:
+            color = self.FGCOLOR
         surface = self.fonts['SMALL'].render(
             f'VOC:  {voc:.0f} kΩ',
             True,
-            self.FGCOLOR)
+            color)
         self.display.blit(surface, (block_x, 520))
 
         pad = 10

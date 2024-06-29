@@ -3,6 +3,7 @@
 ##
 
 import paho.mqtt.client as mqtt
+import time
 import json
 import logging
 
@@ -15,6 +16,7 @@ class MQTT_Listener:
     def __init__(self, host, secure=False, persist=False):
         self.logger = logging.getLogger()
         self.values = {}
+        self.username=secrets["AIO_USERNAME"]
         # Initialize a new MQTT Client object
         if persist:
             # use persistent conn and queued messages
@@ -55,7 +57,7 @@ class MQTT_Listener:
     #def on_connect(self, client, userdata, flags, reason_code, properties):
     def on_connect(self, client, userdata, flags, reason_code):
         # Subscribe to Group
-        client.subscribe("tpavell/groups/Porch/json")
+        client.subscribe(f"{self.username}/groups/Porch/json")
 
     def on_message(self, client, userdata, msg):
         self.logger.debug(f"MQTT msg: {msg.topic} {str(msg.payload)}")
@@ -66,3 +68,30 @@ class MQTT_Listener:
 
     def get_curr_values(self):
         return self.values
+
+    def publish_indoor(self, values):
+        BASE = f"{self.username}/feeds"
+        for topic,payload in values:
+            result = self.mqtt_client.publish(f'{BASE}/{topic}', payload)
+            self.logger.debug(f"MQTT publish: {topic} {str(payload)} -> {result.rc}")
+
+
+def test():
+    MQTT_SERVER = "io.adafruit.com"
+    #MQTT_SERVER = "furberry.bogus.domain"
+    mqtt = MQTT_Listener(MQTT_SERVER, secure=False, persist=False)
+    data = [('Indoor-Temp', 77.0),
+            ('Indoor-Humidity', 42.0),
+            ('Indoor-Pressure', 30.0),
+            ('Indoor-VOC', 111_000)]
+    for _ in range(5):
+        mqtt.publish_indoor(data)
+        time.sleep(30)
+
+
+if __name__ == "__main__" :
+    #level = logging.INFO
+    level = logging.DEBUG
+    logging.basicConfig(format='%(asctime)s - %(levelname)s: %(message)s',
+                        level=level)
+    test()

@@ -73,7 +73,7 @@ class BME_Probe:
     TARGET_ADDR = 0x77   # default seems to be I2C_ADDR_SECONDARY??
 
     ## Other calibration
-    TEMP_OFFSET = -3.5             # added to temp in C before returning
+    TEMP_OFFSET = -3.0             # added to temp in C before returning
     #GAS_BASELINE = 108600         # based on burn-in measurement
     GAS_BASELINE = 400_000          # based on burn-in measurement
 

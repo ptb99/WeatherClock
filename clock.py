@@ -48,7 +48,7 @@ class App:
     FGWARNING = (255, 255, 0)  # yellow
     FGERROR = (255, 0 , 0)     # red
     MQTT_SERVER = "io.adafruit.com"
-    UPDATE_INTERVAL = 1 * 60
+    UPDATE_INTERVAL = 5 * 60
 
     def __init__(self):
         self.logger = logging.getLogger()

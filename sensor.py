@@ -139,9 +139,11 @@ class BME_Probe:
             results['pressure'] = data.pressure
             results['humidity'] = data.humidity
             if data.heat_stable:
-               results['gas_resistance'] = data.gas_resistance
+                results['gas_resistance'] = data.gas_resistance
             else:
-               results['gas_resistance'] = 0
+                if do_voc:
+                    self.logger.warning('sensor read_data() no heat_stable')
+                results['gas_resistance'] = 0
             self.logger.debug(f'sensor read_data(): {results}')
             return results
         else:
@@ -150,8 +152,8 @@ class BME_Probe:
     async def read_loop(self):
         ## these could be optional params??
         NUM_PTS = 5             # measurements to average into a reading
-        INTVL = 1               # seconds between measurement
-        PAUSE_TIME = 10         # time between temp and VOC readings
+        INTVL = 2               # seconds between measurement
+        PAUSE_TIME = 20         # time between temp and VOC readings
 
         # Track the measurments here:
         points = {tag:[] for tag in self.FIELDS}
@@ -186,7 +188,7 @@ class BME_Probe:
         for _ in range(3*NUM_PTS):
             start = time.time()
             results = self.read_data(do_voc=True)
-            if results:
+            if results and results['gas_resistance'] > 0:
                 points['gas_resistance'].append(results['gas_resistance'])
             stop = time.time()
             duration_vocs += (stop - start)
@@ -196,8 +198,8 @@ class BME_Probe:
         elapsed_vocs = (stop_vocs - start_vocs)
         duration_total = stop_vocs - start_reading
         self.logger.info(f'sensor read_loop(): {duration_total:.3f}s = '
-              f'Temps: {2*NUM_PTS} in {duration_temps*1000:.3f}ms for {elapsed_temps:.3f}s, '
-              f'VOCs: {3*NUM_PTS} in {duration_vocs*1000:.3f}ms for {elapsed_vocs:.3f}s'
+              f'Temps: {len(points["temperature"])} in {duration_temps*1000:.3f}ms for {elapsed_temps:.3f}s, '
+              f'VOCs: {len(points["gas_resistance"])} in {duration_vocs*1000:.3f}ms for {elapsed_vocs:.3f}s'
             )
 
         # average the last 5 points

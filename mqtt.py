@@ -25,9 +25,9 @@ class MQTT_Listener:
         else:
             client_id = ''
             cleanup = True
-        # Paho 2.1 now deprecates the v1 API, so use v2...
+        # Paho 2.1 now deprecates the v1 API, but RPi has 1.6.1
         mqttc = mqtt.Client(
-            mqtt.CallbackAPIVersion.VERSION2,
+            #mqtt.CallbackAPIVersion.VERSION2,
             userdata=self,
             client_id=client_id, clean_session=cleanup,
             transport='tcp'
@@ -55,9 +55,9 @@ class MQTT_Listener:
         mqttc.loop_start()
         self.mqtt_client = mqttc
 
-    # For v1, use this signature:
-    #def on_connect(self, client, userdata, flags, reason_code):
-    def on_connect(self, client, userdata, flags, reason_code, properties):
+    # For v2, use this signature:
+    #def on_connect(self, client, userdata, flags, reason_code, properties):
+    def on_connect(self, client, userdata, flags, reason_code):
         # Subscribe to Group
         client.subscribe(f"{self.username}/groups/Porch/json")
 

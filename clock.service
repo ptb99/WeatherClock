@@ -5,7 +5,7 @@
 
 [Unit]
 Description=PiCounter
-After=network.target
+After=network-online.target
 
 [Service]
 Environment=SDL_VIDEODRIVER=kmsdrm

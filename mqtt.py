@@ -25,7 +25,9 @@ class MQTT_Listener:
         else:
             client_id = ''
             cleanup = True
+        # Paho 2.1 now deprecates the v1 API, so use v2...
         mqttc = mqtt.Client(
+            mqtt.CallbackAPIVersion.VERSION2,
             userdata=self,
             client_id=client_id, clean_session=cleanup,
             transport='tcp'
@@ -53,9 +55,9 @@ class MQTT_Listener:
         mqttc.loop_start()
         self.mqtt_client = mqttc
 
-    # For v2, use this signature:
-    #def on_connect(self, client, userdata, flags, reason_code, properties):
-    def on_connect(self, client, userdata, flags, reason_code):
+    # For v1, use this signature:
+    #def on_connect(self, client, userdata, flags, reason_code):
+    def on_connect(self, client, userdata, flags, reason_code, properties):
         # Subscribe to Group
         client.subscribe(f"{self.username}/groups/Porch/json")
 
@@ -65,9 +67,18 @@ class MQTT_Listener:
         for key,val in data['feeds'].items():
             #logger.info(f'MQTT update: {key} = {val}')
             self.values[key] = float(val)
+        self.values['timestamp'] = time.time()
 
     def get_curr_values(self):
         return self.values
+
+    def is_data_current(self, time_window=15*60):
+        tstamp = self.values.get('timestamp', 0)
+        now = time.time()
+        if (now - tstamp) < time_window:
+            return True
+        else:
+            return False
 
     def publish_indoor(self, values):
         BASE = f"{self.username}/feeds"
@@ -76,7 +87,7 @@ class MQTT_Listener:
             self.logger.debug(f"MQTT publish: {topic} {str(payload)} -> {result.rc}")
 
 
-def test():
+def test_publ():
     MQTT_SERVER = "io.adafruit.com"
     #MQTT_SERVER = "furberry.bogus.domain"
     mqtt = MQTT_Listener(MQTT_SERVER, secure=False, persist=False)
@@ -88,10 +99,20 @@ def test():
         mqtt.publish_indoor(data)
         time.sleep(30)
 
+def test_recv():
+    MQTT_SERVER = "io.adafruit.com"
+    #MQTT_SERVER = "furberry.bogus.domain"
+    mqtt = MQTT_Listener(MQTT_SERVER, secure=False, persist=False)
+    while True:
+        vals = mqtt.get_curr_values()
+        print(vals)
+        time.sleep(60)
+
 
 if __name__ == "__main__" :
     #level = logging.INFO
     level = logging.DEBUG
     logging.basicConfig(format='%(asctime)s - %(levelname)s: %(message)s',
                         level=level)
-    test()
+    #test_publ()
+    test_recv()

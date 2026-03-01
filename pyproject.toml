@@ -1,0 +1,12 @@
+[project]
+name = "weatherclock"
+version = "1.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "bme680>=2.0.0",
+    "paho-mqtt>=2.1.0",
+    # Need to use OS pkg for pygame, not uv version:
+    # "pygame>=2.6.1",
+]

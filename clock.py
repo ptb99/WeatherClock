@@ -196,16 +196,21 @@ class App:
         ## Outdoor block
         block_x = 780
         probe_vals = self.mqtt.get_curr_values()
+        is_current = self.mqtt.is_data_current()
         surface = self.fonts['SMALL'].render(
             'Outdoor:',
             True, 
             self.FGCOLOR)
         self.display.blit(surface, (block_x+15, 400))
         temp = probe_vals.get('alt-temp', 0)
+        if is_current:
+            color = self.FGCOLOR
+        else:
+            color = self.FGWARNING
         surface = self.fonts['LARGE'].render(
             f'{temp:.0f}°',
             True, 
-            self.FGCOLOR)
+            color)
         self.display.blit(surface, (block_x, 450))
         block_x = 560
         humid = probe_vals.get('alt-humidity', 0)

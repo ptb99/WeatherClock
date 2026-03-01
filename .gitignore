@@ -5,13 +5,15 @@
 # Python artifacts
 *.py[cod]
 __pycache__/
-venv/
 build/
 dist/
 wheels/
 *.egg-info/
-*.egg
-MANIFEST
+
+# Virtual environments
+venv
+.venv
+.python-version
 
 # C extensions
 *.so
